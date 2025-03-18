@@ -8,6 +8,7 @@ import requests
 import telegram
 from dotenv import load_dotenv
 from telebot import TeleBot
+from telegram.error import TelegramError
 
 from exceptions import APIRequestError, HomeworkStatusError
 
@@ -52,7 +53,7 @@ def send_message(bot, message):
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
         logger.debug(f'Бот отправил сообщение "{message}"')
         return True
-    except telegram.error.TelegramError as error:
+    except TelegramError as error:
         logger.error(f"Ошибка при отправке сообщения в Telegram: {error}")
         return False
 
