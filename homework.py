@@ -9,7 +9,11 @@ from dotenv import load_dotenv
 from telebot import TeleBot
 from telegram.error import TelegramError
 
-from exceptions import APIRequestError, HomeworkStatusError
+from exceptions import (
+    APIRequestError,
+    HomeworkStatusError,
+    MissingTokensError,
+)
 
 load_dotenv()
 
@@ -38,11 +42,21 @@ logger = logging.getLogger(__name__)
 
 def check_tokens():
     """Проверяет наличие обязательных токенов."""
-    required_tokens = (PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
-    for token in required_tokens:
-        if token is None:
-            logger.critical("Отсутствует один из обязательных токенов")
-            return False
+    required_tokens = {
+        "PRACTICUM_TOKEN": PRACTICUM_TOKEN,
+        "TELEGRAM_TOKEN": TELEGRAM_TOKEN,
+        "TELEGRAM_CHAT_ID": TELEGRAM_CHAT_ID,
+    }
+    missing_tokens = []
+
+    for token_name, token_value in required_tokens.items():
+        if token_value is None:
+            missing_tokens.append(token_name)
+    if missing_tokens:
+        logger.critical(
+            "Отсутствуют обязательные токены: %s", ", ".join(missing_tokens)
+        )
+        return False
     return True
 
 
@@ -50,10 +64,10 @@ def send_message(bot, message):
     """Отправляет сообщение в Telegram чат."""
     try:
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-        logger.debug(f'Бот отправил сообщение "{message}"')
+        logger.debug('Бот отправил сообщение "%s"', message)
         return True
     except TelegramError as error:
-        logger.error(f"Ошибка при отправке сообщения в Telegram: {error}")
+        logger.error("Ошибка при отправке сообщения в Telegram: %s", error)
         return False
 
 
@@ -67,18 +81,22 @@ def get_api_answer(timestamp):
             params=params,
             timeout=API_REQUEST_TIMEOUT,
         )
+        print(response)
         if response.status_code != HTTPStatus.OK:
             error_message = (
-                f"Эндпоинт {ENDPOINT} недоступен. "
-                f"Код ответа API: {response.status_code}"
+                f"Эндпоинт {ENDPOINT} недоступен.\n "
+                f"Код ответа API: {response.status_code}.\n "
+                f"URL запроса: {response.url}.\n "
+                f"Хедеры ответа: {response.headers}.\n "
+                f"Текст ответа: {response.text}"
             )
             raise APIRequestError(error_message)
         return response.json()
 
     except requests.exceptions.RequestException as error:
-        raise APIRequestError(f"Ошибка запроса к API: {error}")
+        raise APIRequestError("Ошибка запроса к API: %s", error)
     except ValueError as error:
-        raise APIRequestError(f"Ошибка декодирования ответа API: {error}")
+        raise APIRequestError("Ошибка декодирования ответа API: %s", error)
 
 
 def check_response(response):
@@ -89,6 +107,10 @@ def check_response(response):
         )
     if "homeworks" not in response:
         raise KeyError('Отсутствует ожидаемый ключ "homeworks" в ответе API')
+    if "current_date" not in response:
+        raise KeyError(
+            'Отсутствует ожидаемый ключ "current_date" в ответе API'
+        )
 
     homeworks = response.get("homeworks")
     if not isinstance(homeworks, list):
@@ -128,8 +150,7 @@ def parse_status(homework):
 def main():
     """Основная логика работы бота."""
     if not check_tokens():
-        logger.critical("Программа принудительно остановлена.")
-        sys.exit()
+        raise MissingTokensError("Отсутствуют обязательные токены")
 
     bot = TeleBot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time())
@@ -159,11 +180,7 @@ def main():
         except Exception as error:
             message = f"Сбой в работе программы: {error}"
             logger.error(message)
-            if (
-                str(error) != last_error
-                and TELEGRAM_TOKEN
-                and TELEGRAM_CHAT_ID
-            ):
+            if str(error) != last_error:
                 if str(error) not in unique_error_messages:
                     send_message(bot, message)
                     unique_error_messages.add(str(error))
