@@ -81,14 +81,13 @@ def get_api_answer(timestamp):
             params=params,
             timeout=API_REQUEST_TIMEOUT,
         )
-        print(response)
         if response.status_code != HTTPStatus.OK:
             error_message = (
                 f"Эндпоинт {ENDPOINT} недоступен.\n "
                 f"Код ответа API: {response.status_code}.\n "
                 f"URL запроса: {response.url}.\n "
                 f"Хедеры ответа: {response.headers}.\n "
-                f"Текст ответа: {response.text}"
+                f"Текст ответа: {response.text[:100]}"
             )
             raise APIRequestError(error_message)
         return response.json()
